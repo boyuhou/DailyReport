@@ -104,3 +104,7 @@ venv.bak/
 .mypy_cache/
 
 .idea/
+chart_output/
+data_output/
+result_output/
+
