@@ -1,4 +1,6 @@
 import os
+from docx import Document
+from docxcompose.composer import Composer
 from docxtpl import DocxTemplate, InlineImage, RichText
 from docx.shared import Mm
 from decimal import Decimal, ROUND_HALF_UP
@@ -9,6 +11,53 @@ from PIL import Image
 import comtypes.client
 
 WORD2PDF_FORMAT = 17
+
+
+class Instrument:
+    AUD = 'AUD'
+    CHF = 'CHF'
+    CAD = 'CAD'
+    JPY = 'JPY'
+    NZD = 'NZD'
+    EUR = 'EUR'
+    GBP = 'GBP'
+    USD = 'USD'
+
+
+def get_base_instrument(root_instrument):
+    if Instrument.AUD == root_instrument:
+        return '6A ##-##'
+    if Instrument.CHF == root_instrument:
+        return '6S ##-##'
+    if Instrument.CAD == root_instrument:
+        return '6C ##-##'
+    if Instrument.JPY == root_instrument:
+        return '6J ##-##'
+    if Instrument.NZD == root_instrument:
+        return '6N ##-##'
+    if Instrument.EUR == root_instrument:
+        return '6E ##-##'
+    if Instrument.GBP == root_instrument:
+        return '6B ##-##'
+    return 'DX ##-##'
+
+
+def get_sub_instruments(root_instrument):
+    if Instrument.AUD == root_instrument:
+        return ['AUDCAD', 'AUDCHF', 'AUDJPY', 'AUDNZD', 'AUDUSD', 'EURAUD', 'GBPAUD']
+    if Instrument.CHF == root_instrument:
+        return ['AUDCHF', 'CADCHF', 'CHFJPY', 'EURCHF', 'GBPCHF', 'NZDCHF', 'USDCHF']
+    if Instrument.CAD == root_instrument:
+        return ['AUDCAD', 'CADCHF', 'CADJPY', 'EURCAD', 'GBPCAD', 'NZDCAD', 'USDCAD']
+    if Instrument.JPY == root_instrument:
+        return ['AUDJPY', 'CADJPY', 'CHFJPY', 'EURJPY', 'GBPJPY', 'NZDJPY', 'USDJPY']
+    if Instrument.NZD == root_instrument:
+        return ['AUDNZD', 'EURNZD', 'GBPNZD', 'NZDCAD', 'NZDCHF', 'NZDJPY', 'NZDUSD']
+    if Instrument.EUR == root_instrument:
+        return ['EURAUD', 'EURCAD', 'EURCHF', 'EURGBP', 'EURJPY', 'EURNZD', 'EURUSD']
+    if Instrument.GBP == root_instrument:
+        return ['GBPAUD', 'GBPCAD', 'GBPCHF', 'GBPJPY', 'EURGBP', 'GBPNZD', 'GBPUSD']
+    return ['AUDUSD', 'EURUSD', 'GBPUSD', 'NZDUSD', 'USDCAD', 'USDCHF', 'USDJPY']
 
 
 class COLOURS:
@@ -94,6 +143,16 @@ def combine_images(list_im, target_path):
     imgs_comb.save(target_path)
 
 
+def combine_report(docs_list, output_path):
+    master = Document(docs_list[0])
+    composer = Composer(master)
+    if len(docs_list) > 1:
+        for item_path in docs_list[1:]:
+            doc = Document(item_path)
+            composer.append(doc)
+    composer.save(output_path)
+
+
 def save_doc(context, inline_imgs, file_dict, template_path, result_path):
     tpl = DocxTemplate(template_path)
     for cur_key in file_dict:
@@ -157,6 +216,98 @@ def get_value_area_style(val, vah, vpoc, atr):
     if style == '':
         style = 'Normal, '
     return style[:-2]
+
+
+def get_zone(one_one_low, one_one_high, envelope_bottom, envelope_top, atr, dot, live_dot, live_live_dot, channel_trend):
+    result = {}
+    fuzzy_ratio = 0.05
+    if channel_trend in ['UpTrend', 'TransitionUp']:
+        if live_live_dot >= envelope_top:
+            result['InnerBuy'] = {
+                'low': live_dot,
+                'high': live_live_dot,
+            }
+            result['InnerSell'] = {
+                'low': one_one_high - fuzzy_ratio * atr,
+                'high': one_one_high + fuzzy_ratio * atr,
+            }
+        elif live_dot - dot >= 0.2 * atr:
+            result['InnerBuy'] = {
+                'low': dot,
+                'high': live_dot,
+            }
+            result['InnerSell'] = {
+                'low': one_one_high - fuzzy_ratio * atr,
+                'high': one_one_high + fuzzy_ratio * atr,
+            }
+        else:
+            result['InnerBuy'] = {
+                'low': min(one_one_low, envelope_bottom),
+                'high': max(one_one_low, envelope_bottom),
+            }
+            result['InnerSell'] = {
+                'low': min(one_one_high, envelope_top),
+                'high': max(one_one_high, envelope_top),
+            }
+    elif channel_trend in ['DownTrend', 'TransitionDown']:
+        if live_live_dot <= envelope_bottom:
+            result['InnerBuy'] = {
+                'low': one_one_low - fuzzy_ratio * atr,
+                'high': one_one_low + fuzzy_ratio * atr,
+            }
+            result['InnerSell'] = {
+                'low': live_live_dot,
+                'high': live_dot,
+            }
+        elif abs(live_dot - dot) >= 0.2 * atr:
+            result['InnerBuy'] = {
+                'low': one_one_low - fuzzy_ratio * atr,
+                'high': one_one_low + fuzzy_ratio * atr,
+            }
+            result['InnerSell'] = {
+                'low': live_dot,
+                'high': dot,
+            }
+        else:
+            result['InnerBuy'] = {
+                'low': min(one_one_low, envelope_bottom),
+                'high': max(one_one_low, envelope_bottom),
+            }
+            result['InnerSell'] = {
+                'low': min(one_one_high, envelope_top),
+                'high': max(one_one_high, envelope_top),
+            }
+    else:
+        result['InnerBuy'] = {
+            'low': min(one_one_low, envelope_bottom),
+            'high': max(one_one_low, envelope_bottom),
+        }
+        result['InnerSell'] = {
+            'low': min(one_one_high, envelope_top),
+            'high': max(one_one_high, envelope_top),
+        }
+    return result
+
+
+def get_report_price_info(absolute_path, instrument, prefix):
+    file_path = os.path.join(absolute_path, instrument + '.csv')
+    s = pd.read_csv(file_path).iloc[-1, :]
+    result = {}
+    result['Market Env'] = s[prefix + 'MarketEnv']
+    result['Trend State'] = s[prefix + 'TrendState']
+    result['ATR'] = '{0:.4f}'.format(s[prefix + 'Atr'])
+    result['Close 2 VPOC'] = '{0:.4f}'.format((s['ClosePrice'] - s[prefix + 'VPOC']) / s[prefix + 'Atr'])
+    result['Channel Trend'] = s[prefix + 'TrendState']
+    result['Value Area'] = get_value_area_style(s[prefix + 'VAL'], s[prefix + 'VAH'], s[prefix + 'VPOC'],
+                                                s[prefix + 'Atr'])
+
+    zone_info = get_zone(s[prefix + 'OneOneLow'], s[prefix + 'OneOneHigh'], s[prefix + 'EnvelopeLow'],
+                         s[prefix + 'EnvelopeHigh'], s[prefix + 'Atr'], s[prefix + 'Dot'], s[prefix + 'LiveDot'],
+                         s[prefix + 'LiveLiveDot'], s[prefix + 'TrendState'])
+
+    result['Inner Buy'] = '{0:.4f} to {1:.4f}'.format(zone_info['InnerBuy']['low'], zone_info['InnerBuy']['high'])
+    result['Inner Sell'] = '{0:.4f} to {1:.4f}'.format(zone_info['InnerSell']['low'], zone_info['InnerSell']['high'])
+    return result
 
 
 class GridBuilder:
