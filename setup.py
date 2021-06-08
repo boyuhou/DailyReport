@@ -25,7 +25,7 @@ setup(name='DailyReport',
           'docxtpl==0.5.17',
           'python-docx==0.8.7',
           'colour==0.1.5',
-          'Pillow==6.1.0'
+          'Pillow==8.2.0'
       ],
       extras_require={
           'dev': [
